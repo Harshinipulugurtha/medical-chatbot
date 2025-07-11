@@ -13,13 +13,10 @@ def ask_gemini(question, context="", tone="formal", simple=False):
         "friendly": "Respond warmly and clearly.",
         "child": "Explain like to a 10-year-old."
     }
-    prompt = f"""You are a helpful multilingual medical assistant.
-Context: {context}
-Question: {question}
-Tone: {tone_map.get(tone, '')}
-{ 'Explain simply at the end.' if simple else '' }
-
-Answer:"""
+    if simple:
+        prompt = f"""You are a helpful multilingual medical assistant.\nContext: {context}\nQuestion: {question}\nPlease answer in 2-4 short sentences, using very simple words, as if explaining to a young child or someone with no medical background. Do not include technical details, long explanations, or any greetings.\n\nAnswer:"""
+    else:
+        prompt = f"""You are a helpful multilingual medical assistant.\nContext: {context}\nQuestion: {question}\nTone: {tone_map.get(tone, '')}\n\nAnswer:"""
     model = genai.GenerativeModel("gemini-2.5-flash")
     response = model.generate_content(prompt)
     return response.text.strip()

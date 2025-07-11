@@ -13,3 +13,4 @@ pydub
 SpeechRecognition
 streamlit-mic-recorder
 python-multipart
+sentencepiece
