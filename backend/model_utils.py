@@ -59,7 +59,7 @@ def analyze_image(image_path, role="radiologist"):
     response = model.generate_content([prompt, img])
     return response.text.strip()
 
-def highlight_medical_entities(text):
+def highlight_medical_entities(text)                                                                                        :
     entities = NER(text)
     for ent in entities:
         label = ent['entity_group']

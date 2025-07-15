@@ -18,3 +18,4 @@ sentence-transformers
 PyPDF2
 python-multipart
 beautifulsoup4
+pdfplumber

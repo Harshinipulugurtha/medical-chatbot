@@ -1,0 +1,109 @@
+frontend/app.py
+
+import streamlit as st import requests from mic_utils import record_and_transcribe from tts_utils import speak_text, generate_audio_html from ner_display import display_ner_highlighted import os from transformers import pipeline import string from streamlit_mic_recorder import mic_recorder import speech_recognition as sr from io import BytesIO from pydub import AudioSegment import tempfile from PIL import Image, UnidentifiedImageError
+
+-------------------------
+
+Utility Functions
+
+-------------------------
+
+def translate_question(text, lang_code): if lang_code == "en": return text model_map = { "fr": "Helsinki-NLP/opus-mt-fr-en", "es": "Helsinki-NLP/opus-mt-es-en", "de": "Helsinki-NLP/opus-mt-de-en", "hi": "Helsinki-NLP/opus-mt-hi-en", "zh": "Helsinki-NLP/opus-mt-zh-en" } model_name = model_map.get(lang_code) if not model_name: return text translator = pipeline("translation", model=model_name) return translator(text, max_length=512)[0]['translation_text']
+
+def translate_answer(text, lang_code): if lang_code == "en": return text model_map = { "fr": "Helsinki-NLP/opus-mt-en-fr", "es": "Helsinki-NLP/opus-mt-en-es", "de": "Helsinki-NLP/opus-mt-en-de", "hi": "Helsinki-NLP/opus-mt-en-hi", "zh": "Helsinki-NLP/opus-mt-en-zh" } model_name = model_map.get(lang_code) if not model_name: return text translator = pipeline("translation", model=model_name) return translator(text, max_length=512)[0]['translation_text']
+
+def is_greeting(text): greetings = {"hi", "hello", "hey", "good morning", "good evening", "bonjour", "salut", "hola", "hallo", "namaste", "你好"} text_clean = text.lower().translate(str.maketrans('', '', string.punctuation)).strip() return text_clean in greetings
+
+-------------------------
+
+Page Configuration & CSS
+
+-------------------------
+
+st.set_page_config(page_title="🦠 Medical Assistant", page_icon="🩺", layout="wide")
+
+st.markdown(""" <style> .main-title { font-size: 2.5em; font-weight: 800; color: #003366; margin-bottom: 0.5em; } .section-heading { font-size: 1.6em; font-weight: 700; color: #1a1a1a; margin-top: 2em; } .upload-box { border: 2px dashed #ccc; padding: 1em; border-radius: 12px; background-color: #f9f9f9; } .stDownloadButton>button { background-color: #2E8B57 !important; color: white !important; font-weight: bold; } </style> """, unsafe_allow_html=True)
+
+-------------------------
+
+Sidebar Navigation
+
+-------------------------
+
+st.sidebar.title("🩺 Medical Assistant") page = st.sidebar.radio("Navigate", ["🏞 Home", "🖼 Image Analysis", "📄 PDF Report Analysis", "🎙 Voice Q&A", "💬 Chatbot Q&A"])
+
+-------------------------
+
+Session State Initialization
+
+-------------------------
+
+if "messages" not in st.session_state: st.session_state.messages = [] if "image_analysis" not in st.session_state: st.session_state.image_analysis = "" if "pdf_analysis" not in st.session_state: st.session_state.pdf_analysis = ""
+
+-------------------------
+
+Global Inputs
+
+-------------------------
+
+language_map = { "en": "English", "fr": "French", "es": "Spanish", "de": "German", "hi": "Hindi", "zh": "Chinese" }
+
+output_lang = st.sidebar.selectbox("🌐 Response language:", list(language_map.keys()), format_func=lambda x: language_map[x]) input_lang = st.sidebar.selectbox("🎙 Voice input language:", list(language_map.keys()), format_func=lambda x: language_map[x]) simple_explanation = st.sidebar.checkbox("📖 Simple explanation mode (for kids / non-experts)") tone = st.sidebar.selectbox("🧘 Tone:", ["formal", "friendly", "child"])
+
+role_map = { "radiologist": "Radiologist", "general_physician": "General Physician", "orthopedist": "Orthopedist", "cardiologist": "Cardiologist", "neurologist": "Neurologist", "dermatologist": "Dermatologist", "pediatrician": "Pediatrician", "dentist": "Dentist" } role = st.sidebar.selectbox("👨⚕ Medical Expert Role:", list(role_map.keys()), format_func=lambda x: role_map[x])
+
+BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
+
+-------------------------
+
+💬 Chatbot Q&A
+
+-------------------------
+
+if page == "💬 Chatbot Q&A": st.title("💬 Chat with Medical Assistant") user_input = st.chat_input("Type a medical question...")
+
+if user_input:
+    st.session_state.messages.append(("user", user_input))
+    user_msg = user_input
+
+    if is_greeting(user_msg):
+        answer = {
+            "en": "Hello! How can I assist you today?",
+            "fr": "Bonjour ! Comment puis-je vous aider aujourd'hui ?",
+            "es": "¡Hola! ¿Cómo puedo ayudarte hoy?",
+            "de": "Hallo! Wie kann ich Ihnen heute helfen?",
+            "hi": "नमस्ते! मैं आज आपकी कैसे मदद कर सकता हूं?",
+            "zh": "你好！我今天能帮您什么？"
+        }.get(output_lang, "Hello! How can I assist you today?")
+        st.session_state.messages.append(("assistant", answer))
+    else:
+        with st.spinner("Thinking..."):
+            translated_question = translate_question(user_msg, input_lang)
+            history = []
+            for role_msg, msg in st.session_state.messages:
+                if role_msg == "user":
+                    history.append(f"User: {msg}")
+                elif role_msg == "assistant":
+                    history.append(f"Assistant: {msg}")
+            if st.session_state.image_analysis:
+                history.append(f"Image Analysis: {st.session_state.image_analysis}")
+            if st.session_state.pdf_analysis:
+                history.append(f"PDF Analysis: {st.session_state.pdf_analysis}")
+            chat_history = "\n".join(history)
+            payload = {
+                "question": translated_question,
+                "context": chat_history,
+                "tone": tone,
+                "role": role,
+                "simplify": simple_explanation
+            }
+            res = requests.post(f"{BACKEND_URL}/ask", data=payload)
+            answer = res.json().get("answer", "❌ No response")
+            translated_answer = translate_answer(answer, output_lang)
+            st.session_state.messages.append(("assistant", translated_answer))
+
+for idx, (role_label, msg) in enumerate(st.session_state.messages):
+    with st.chat_message(role_label):
+        st.markdown(msg)
+        if role_label == "assistant":
+            speak_text(msg, key=f"assistant_{idx}")

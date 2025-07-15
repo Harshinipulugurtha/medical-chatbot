@@ -1,20 +1,12 @@
 #frontend/app.py
 import streamlit as st
 import requests
-from mic_utils import record_and_transcribe
-from tts_utils import speak_text, generate_audio_html
-from ner_display import display_ner_highlighted
+from tts_utils import generate_audio_html
 import os
-import torch
 from transformers import pipeline
 import string
-from streamlit_mic_recorder import mic_recorder
-import speech_recognition as sr
 from io import BytesIO
-from pydub import AudioSegment
-import tempfile
 from PIL import Image, UnidentifiedImageError
-
 
 # -------------------------
 # Utility Functions
@@ -60,7 +52,7 @@ def is_greeting(text):
 # -------------------------
 # Page Configuration & CSS
 # -------------------------
-st.set_page_config(page_title=" Medical Assistant", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="🦠 Medical Assistant", page_icon="🩺", layout="wide")
 
 st.markdown("""
     <style>
@@ -94,13 +86,12 @@ st.markdown("""
 # Sidebar Navigation
 # -------------------------
 st.sidebar.title("🩺 Medical Assistant")
-page = st.sidebar.radio("Navigate", ["🏞️ Home", "🖼️ Image Analysis", "📄 PDF Report Analysis", "🎙️ Voice Q&A", "💬 Chatbot Q&A"])
-
+page = st.sidebar.radio("Navigate", ["🏞️ Home", "🖼️ Image Analysis", "📄 PDF Report Analysis"])
 
 # -------------------------
 # Session State Initialization
 # -------------------------
-for key in ["image_messages", "pdf_messages", "messages"]:
+for key in ["image_messages", "pdf_messages"]:
     if key not in st.session_state:
         st.session_state[key] = []
 for key in ["image_analysis", "pdf_analysis"]:
@@ -113,7 +104,6 @@ for key in ["image_analysis_displayed", "pdf_analysis_displayed"]:
     if key not in st.session_state:
         st.session_state[key] = False
 
-
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 
 # -------------------------
@@ -125,7 +115,6 @@ language_map = {
 }
 
 output_lang = st.sidebar.selectbox("🌐 Response language:", list(language_map.keys()), format_func=lambda x: language_map[x])
-input_lang = st.sidebar.selectbox("🎙️ Voice input language:", list(language_map.keys()), format_func=lambda x: language_map[x])
 simple_explanation = st.sidebar.checkbox("📖 Simple explanation mode (for kids / non-experts)")
 tone = st.sidebar.selectbox("🧘 Tone:", ["formal", "friendly", "child"])
 
@@ -285,123 +274,3 @@ if page == "📄 PDF Report Analysis":
                 st.markdown(msg)
                 if role == "assistant":
                     st.components.v1.html(generate_audio_html(msg, lang=output_lang, key=f"assistant_pdf_{idx}"), height=100)
-
-
-# -------------------------
-# 🎙️ Voice Q&A Page
-# -------------------------
-if page == "🎙️ Voice Q&A":
-    st.title("🎙️ Ask Medical Questions via Voice")
-    st.markdown("Record a voice question and get medical assistance.")
-
-    # Language code map for Google API
-    lang_code_map = {
-        "en": "en-US", "fr": "fr-FR", "es": "es-ES",
-        "de": "de-DE", "hi": "hi-IN", "zh": "zh-CN"
-    }
-
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    # Voice input box
-    st.write("🎤 Click to record your voice question")
-    spoken_text = record_and_transcribe(lang=lang_code_map.get(input_lang, "en-US"))
-
-    if spoken_text and not spoken_text.startswith("❌"):
-        st.session_state.messages.append(("user", spoken_text))
-        st.markdown("**You said:**")
-        st.markdown(f"> {spoken_text}")
-
-        # Translate to English if needed
-        translated_question = translate_question(spoken_text, input_lang)
-
-        # Prepare payload
-        payload = {
-            "question": translated_question,
-            "context": "",
-            "tone": tone,
-            "role": role,
-            "simplify": simple_explanation
-        }
-
-        # Get answer from backend (no timeout limit)
-        with st.spinner("Thinking..."):
-            try:
-                res = requests.post(f"{BACKEND_URL}/ask", data=payload)
-                answer = res.json().get("answer", "❌ No response")
-            except Exception as e:
-                answer = f"❌ Invalid response from backend: {e}"
-
-        translated_answer = translate_answer(answer, output_lang)
-        st.session_state.messages.append(("assistant", translated_answer))
-
-    elif spoken_text.startswith("❌"):
-        st.warning(spoken_text)
-
-    # Chat-style rendering of messages
-    for idx, (role_label, msg) in enumerate(st.session_state.messages):
-        with st.chat_message(role_label):
-            st.markdown(msg)
-            if role_label == "assistant":
-                st.components.v1.html(
-                    generate_audio_html(msg, lang=output_lang, key=f"voice_qna_{idx}"),
-                    height=100
-                )
-
-    # Re-record section at the bottom
-    st.divider()
-    st.markdown("🔁 Ask another question by recording your voice above.")
-
-
-# -------------------------
-# 💬 Chatbot Q&A
-# -------------------------
-if page == "💬 Chatbot Q&A":
-    st.title("💬 Chat with Medical Assistant")
-    user_input = st.chat_input("Type a medical question...")
-
-    if user_input:
-        st.session_state.messages.append(("user", user_input))
-        user_msg = user_input
-
-        if is_greeting(user_msg):
-            answer = {
-                "en": "Hello! How can I assist you today?",
-                "fr": "Bonjour ! Comment puis-je vous aider aujourd'hui ?",
-                "es": "¡Hola! ¿Cómo puedo ayudarte hoy?",
-                "de": "Hallo! Wie kann ich Ihnen heute helfen?",
-                "hi": "नमस्ते! मैं आज आपकी कैसे मदद कर सकता हूं?",
-                "zh": "你好！我今天能帮您什么？"
-            }.get(output_lang, "Hello! How can I assist you today?")
-            st.session_state.messages.append(("assistant", answer))
-        else:
-            with st.spinner("Thinking..."):
-                history = []
-                for role_msg, msg in st.session_state.messages:
-                    if role_msg == "user":
-                        history.append(f"User: {msg}")
-                    elif role_msg == "assistant":
-                        history.append(f"Assistant: {msg}")
-                if st.session_state.image_analysis:
-                    history.append(f"Image Analysis: {st.session_state.image_analysis}")
-                if st.session_state.pdf_analysis:
-                    history.append(f"PDF Analysis: {st.session_state.pdf_analysis}")
-                chat_history = "\n".join(history)
-                payload = {
-                    "question": user_msg,
-                    "context": chat_history,
-                    "tone": tone,
-                    "role": role,
-                    "simplify": True
-                }
-                res = requests.post(f"{BACKEND_URL}/ask", data=payload)
-                answer = res.json().get("answer", "❌ No response")
-                translated_answer = translate_answer(answer, output_lang)
-                st.session_state.messages.append(("assistant", translated_answer))
-
-    for idx, (role_label, msg) in enumerate(st.session_state.messages):
-        with st.chat_message(role_label):
-            st.markdown(msg)
-            if role_label == "assistant":
-                speak_text(msg, key=f"assistant_{idx}")
-

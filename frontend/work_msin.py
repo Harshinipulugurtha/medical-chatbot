@@ -60,7 +60,7 @@ def is_greeting(text):
 # -------------------------
 # Page Configuration & CSS
 # -------------------------
-st.set_page_config(page_title=" Medical Assistant", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="🦠 Medical Assistant", page_icon="🩺", layout="wide")
 
 st.markdown("""
     <style>

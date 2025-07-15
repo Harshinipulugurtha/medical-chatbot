@@ -5,7 +5,6 @@ from mic_utils import record_and_transcribe
 from tts_utils import speak_text, generate_audio_html
 from ner_display import display_ner_highlighted
 import os
-import torch
 from transformers import pipeline
 import string
 from streamlit_mic_recorder import mic_recorder
@@ -60,7 +59,7 @@ def is_greeting(text):
 # -------------------------
 # Page Configuration & CSS
 # -------------------------
-st.set_page_config(page_title=" Medical Assistant", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="🦠 Medical Assistant", page_icon="🩺", layout="wide")
 
 st.markdown("""
     <style>
@@ -94,13 +93,13 @@ st.markdown("""
 # Sidebar Navigation
 # -------------------------
 st.sidebar.title("🩺 Medical Assistant")
-page = st.sidebar.radio("Navigate", ["🏞️ Home", "🖼️ Image Analysis", "📄 PDF Report Analysis", "🎙️ Voice Q&A", "💬 Chatbot Q&A"])
+page = st.sidebar.radio("Navigate", ["🏞️ Home", "🖼️ Image Analysis", "📄 PDF Report Analysis", "🎙️ Voice Q&A"])
 
 
 # -------------------------
 # Session State Initialization
 # -------------------------
-for key in ["image_messages", "pdf_messages", "messages"]:
+for key in ["image_messages", "pdf_messages"]:
     if key not in st.session_state:
         st.session_state[key] = []
 for key in ["image_analysis", "pdf_analysis"]:
@@ -112,7 +111,6 @@ for key in ["image_analysis_spoken", "pdf_analysis_spoken"]:
 for key in ["image_analysis_displayed", "pdf_analysis_displayed"]:
     if key not in st.session_state:
         st.session_state[key] = False
-
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 
@@ -353,55 +351,6 @@ if page == "🎙️ Voice Q&A":
     st.markdown("🔁 Ask another question by recording your voice above.")
 
 
-# -------------------------
-# 💬 Chatbot Q&A
-# -------------------------
-if page == "💬 Chatbot Q&A":
-    st.title("💬 Chat with Medical Assistant")
-    user_input = st.chat_input("Type a medical question...")
 
-    if user_input:
-        st.session_state.messages.append(("user", user_input))
-        user_msg = user_input
 
-        if is_greeting(user_msg):
-            answer = {
-                "en": "Hello! How can I assist you today?",
-                "fr": "Bonjour ! Comment puis-je vous aider aujourd'hui ?",
-                "es": "¡Hola! ¿Cómo puedo ayudarte hoy?",
-                "de": "Hallo! Wie kann ich Ihnen heute helfen?",
-                "hi": "नमस्ते! मैं आज आपकी कैसे मदद कर सकता हूं?",
-                "zh": "你好！我今天能帮您什么？"
-            }.get(output_lang, "Hello! How can I assist you today?")
-            st.session_state.messages.append(("assistant", answer))
-        else:
-            with st.spinner("Thinking..."):
-                history = []
-                for role_msg, msg in st.session_state.messages:
-                    if role_msg == "user":
-                        history.append(f"User: {msg}")
-                    elif role_msg == "assistant":
-                        history.append(f"Assistant: {msg}")
-                if st.session_state.image_analysis:
-                    history.append(f"Image Analysis: {st.session_state.image_analysis}")
-                if st.session_state.pdf_analysis:
-                    history.append(f"PDF Analysis: {st.session_state.pdf_analysis}")
-                chat_history = "\n".join(history)
-                payload = {
-                    "question": user_msg,
-                    "context": chat_history,
-                    "tone": tone,
-                    "role": role,
-                    "simplify": True
-                }
-                res = requests.post(f"{BACKEND_URL}/ask", data=payload)
-                answer = res.json().get("answer", "❌ No response")
-                translated_answer = translate_answer(answer, output_lang)
-                st.session_state.messages.append(("assistant", translated_answer))
-
-    for idx, (role_label, msg) in enumerate(st.session_state.messages):
-        with st.chat_message(role_label):
-            st.markdown(msg)
-            if role_label == "assistant":
-                speak_text(msg, key=f"assistant_{idx}")
 
