@@ -7,9 +7,12 @@ from bs4 import BeautifulSoup
 
 def clean_text(text):
     try:
+        # Remove colons and strip HTML tags
+        text = text.replace(':', '')
+        from bs4 import BeautifulSoup
         return BeautifulSoup(text, "html.parser").get_text().strip()[:3000]
     except:
-        return text[:3000]
+        return text.replace(':', '')[:3000]
 
 def speak_text(text, lang="en", key=None):
     try:

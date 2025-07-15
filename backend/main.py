@@ -1,7 +1,7 @@
 # backend/main.py
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from model_utils import ask_gemini, analyze_image, highlight_medical_entities
+from model_utils import ask_gemini, analyze_image, highlight_medical_entities, summarize_content
 from pdf_utils import extract_text_from_pdf
 from pathlib import Path
 import os
@@ -29,10 +29,21 @@ async def ask_question(question: str = Form(...), context: str = Form(""), tone:
 @app.post("/analyze_image")
 async def analyze_image_route(image: UploadFile = File(...)):
     image_path = DATA_DIR / image.filename
-    with open(image_path, "wb") as f:
-        shutil.copyfileobj(image.file, f)
-    result = analyze_image(str(image_path))
-    return {"analysis": result}
+    try:
+        with open(image_path, "wb") as f:
+            shutil.copyfileobj(image.file, f)
+        # Check image format and size before analysis
+        from PIL import Image as PILImage
+        img = PILImage.open(image_path)
+        if img.size[0] < 100 or img.size[1] < 100:
+            return {"analysis": "❌ Error: Image too small for analysis. Please upload an image at least 100x100 pixels."}
+        if img.format not in ["JPEG", "PNG", "JPG"]:
+            return {"analysis": f"❌ Error: Unsupported image format: {img.format}. Please upload a PNG or JPEG image."}
+        result = analyze_image(str(image_path))
+        summary = summarize_content(result)
+        return {"analysis": summary}
+    except Exception as e:
+        return {"analysis": f"❌ Error: Could not process image. Reason: {str(e)}"}
 
 @app.post("/upload_pdf")
 async def upload_pdf(file: UploadFile = File(...)):
@@ -40,4 +51,5 @@ async def upload_pdf(file: UploadFile = File(...)):
     with open(pdf_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
     text = extract_text_from_pdf(str(pdf_path))
-    return {"content": text}
+    summary = summarize_content(text)
+    return {"content": summary}
